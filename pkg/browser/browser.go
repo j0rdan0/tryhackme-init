@@ -8,7 +8,15 @@ import (
 	"github.com/joakimcarlsson/bonk"
 )
 
-var SESSION_FILE = filepath.Join(os.TempDir(), "session.dat")
+var SESSION_FILE string
+
+func init() {
+	if _, err := os.Stat("session.dat"); err == nil {
+		SESSION_FILE = "session.dat"
+		return
+	}
+	SESSION_FILE = filepath.Join(os.TempDir(), "session.dat")
+}
 
 type SavedState struct {
 	Cookies []bonk.Cookie `json:"cookies"`

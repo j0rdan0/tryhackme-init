@@ -16,12 +16,61 @@ import (
 	"extend-vm/pkg/hosts"
 )
 
-var SESSION_FILE = filepath.Join(os.TempDir(), "session.dat")
+func checkLoggedIn(page *bonk.Page) bool {
+	// Poll for up to 15 seconds to wait for page initialization (spinner to disappear)
+	val, err := page.Timeout(15 * time.Second).Evaluate(`(async () => {
+		for (let i = 0; i < 60; i++) {
+			if (
+				document.querySelector('.profile-avatar') || 
+				document.querySelector('.nav-user') || 
+				document.querySelector('#start-attackbox') ||
+				document.querySelector('#active-machine-info') ||
+				document.querySelector('[id^="start-machine-button"]')
+			) {
+				return true;
+			}
+			if (
+				window.location.pathname.includes('/login') ||
+				document.querySelector('a[href*="/login"]') ||
+				Array.from(document.querySelectorAll('a, button')).some(el => {
+					const txt = el.innerText.toLowerCase();
+					return txt.includes('log in') || txt.includes('sign in') || txt.includes('login') || txt.includes('signin');
+				})
+			) {
+				return false;
+			}
+			await new Promise(resolve => setTimeout(resolve, 250));
+		}
+		return false;
+	})()`)
+	if err != nil {
+		return false
+	}
+	res, ok := val.(bool)
+	return ok && res
+}
+
+func checkLoggedInWithTimeout(page *bonk.Page, timeout time.Duration) bool {
+	isLoggedInVal, err := page.Timeout(timeout).Evaluate(`(() => {
+		return !!(
+			document.querySelector('.profile-avatar') || 
+			document.querySelector('.nav-user') || 
+			document.querySelector('#start-attackbox') ||
+			document.querySelector('#active-machine-info') ||
+			document.querySelector('[id^="start-machine-button"]')
+		);
+	})()`)
+	if err != nil {
+		return false
+	}
+	val, ok := isLoggedInVal.(bool)
+	return ok && val
+}
 
 func Start(roomName string) {
 	roomURL := "https://tryhackme.com/room/" + roomName
 	hasSession := false
-	if _, err := os.Stat(SESSION_FILE); err == nil {
+	if _, err := os.Stat(browser.SESSION_FILE); err == nil {
 		hasSession = true
 	}
 
@@ -48,100 +97,11 @@ func Start(roomName string) {
 		fmt.Println("Captured headless-screenshot.png to verify login state.")
 	}
 
-	// Step 1: Check if we are logged in.
-	isLoggedInVal, err := page.Timeout(3 * time.Second).Evaluate(`(() => {
-		return !!(
-			document.querySelector('.profile-avatar') || 
-			document.querySelector('.nav-user') || 
-			document.querySelector('#start-attackbox') ||
-			document.querySelector('#active-machine-info') ||
-			document.querySelector('[id^="start-machine-button"]')
-		);
-	})()`)
-
-	isLoggedIn := false
-	if err == nil {
-		isLoggedIn = isLoggedInVal.(bool)
-	}
-
-	if isLoggedIn {
-		fmt.Println("Session is valid! Checking target VM status...")
-
-		// Check if VM is already active
-		hasActiveVM, _ := page.Evaluate(`(() => {
-			const activeInfo = document.getElementById('active-machine-info');
-			if (!activeInfo) return false;
-			const text = activeInfo.innerText.toLowerCase();
-			return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
-		})()`)
-		if hasActiveVM.(bool) {
-			fmt.Println("Target VM is already running.")
-			if ip := logTargetIP(page, roomName); ip != "" {
-				startVPNAndScan(roomName, ip)
-			}
-			fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-			_ = ctx.SaveState(SESSION_FILE)
-			browser.CleanScreenshots()
-			return
-		}
-
-		// Try clicking the start machine button automatically using JS click injection.
-		fmt.Println("Checking for start machine button...")
-		clicked, clickErr := page.Timeout(10 * time.Second).Evaluate(`(async () => {
-			// 1. Wait for header-1 to render in the DOM (polling for up to 5 seconds)
-			await new Promise((resolve) => {
-				const timeout = setTimeout(resolve, 5000);
-				const check = () => {
-					if (document.getElementById('header-1')) {
-						clearTimeout(timeout);
-						resolve();
-					} else {
-						setTimeout(check, 250);
-					}
-				};
-				check();
-			});
-
-			// 2. Expand header-1 if collapsed
-			const h = document.getElementById('header-1');
-			if (h) {
-				const expanded = h.getAttribute('aria-expanded');
-				if (expanded === 'false' || expanded === null) {
-					h.click();
-				}
-			}
-			
-			// Wait 1s for DOM / React rendering
-			await new Promise(resolve => setTimeout(resolve, 1000));
-
-			// 3. Find and click the start machine button
-			const btn = document.getElementById('start-machine-button-1') || 
-			            document.querySelector('[id^="start-machine-button"]');
-			if (btn) {
-				btn.click();
-				return true;
-			}
-			return false;
-		})()`)
-
-		if clickErr == nil && clicked.(bool) {
-			fmt.Println("Successfully clicked start machine button automatically!")
-			if ip := logTargetIP(page, roomName); ip != "" {
-				startVPNAndScan(roomName, ip)
-			}
-			fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-			_ = ctx.SaveState(SESSION_FILE)
-			fmt.Println("Done!")
-			browser.CleanScreenshots()
-			return
-		}
-
-		fmt.Println("Warning: Logged in, but target machine could not be started automatically (button not found and VM not running).")
-	}
+	isLoggedIn := checkLoggedIn(page)
 
 	// If we are NOT logged in and we were running headlessly, relaunch headfully
 	if !isLoggedIn && hasSession {
-		fmt.Println("Session expired or invalid. Relaunching in headful mode to allow login...")
+		fmt.Println("Session expired, invalid or blocked. Relaunching in headful mode to allow login...")
 		b.Close() // Close headless browser
 
 		b, ctx, page, err = browser.Launch(false)
@@ -153,53 +113,90 @@ func Start(roomName string) {
 		fmt.Printf("Navigating to %s (headful)...\n", roomURL)
 		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
 		time.Sleep(3 * time.Second)
+
+		isLoggedIn = checkLoggedIn(page)
 	}
 
 	// Capture a debug screenshot of the headful window just in case
 	_ = page.Screenshot(filepath.Join(os.TempDir(), "debug-screenshot.png"))
 
-	// Prompt the user to log in
-	fmt.Println("\n============================================================")
-	fmt.Println("INSTRUCTIONS:")
-	fmt.Println("1. If you are not logged in, please log in now in the browser window.")
-	fmt.Println("2. Once logged in, the VM will be ready to start.")
-	fmt.Println("3. Press [ENTER] or [Ctrl+C] in this terminal to save session & start VM.")
-	fmt.Println("============================================================")
+	if !isLoggedIn {
+		// Prompt the user to log in
+		fmt.Println("\n============================================================")
+		fmt.Println("INSTRUCTIONS:")
+		fmt.Println("1. Please log in now in the browser window.")
+		fmt.Println("2. Once logged in, the VM will be ready to start.")
+		fmt.Println("3. The script will automatically detect once you are logged in, or")
+		fmt.Println("   you can press [ENTER] in this terminal to force continue.")
+		fmt.Println("============================================================")
 
-	done := make(chan bool, 1)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		fmt.Println("\n[Ctrl+C] detected. Saving state and exiting...")
-		done <- true
-	}()
+		done := make(chan bool, 1)
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			fmt.Println("\n[Ctrl+C] detected. Saving state and exiting...")
+			done <- true
+		}()
 
-	// Wait for Enter key on /dev/tty
-	go func() {
-		var reader *bufio.Reader
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			defer tty.Close()
-			reader = bufio.NewReader(tty)
-		} else {
-			reader = bufio.NewReader(os.Stdin)
-		}
-
-		for {
-			_, err := reader.ReadString('\n')
-			if err == nil {
-				done <- true
-				return
+		// Goroutine to poll login status
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if page.IsClosed() {
+						return
+					}
+					if checkLoggedInWithTimeout(page, 1*time.Second) {
+						fmt.Println("\nLogin detected automatically!")
+						done <- true
+						return
+					}
+					time.Sleep(1500 * time.Millisecond)
+				}
 			}
-			time.Sleep(500 * time.Millisecond)
+		}()
+
+		// Wait for Enter key on /dev/tty
+		go func() {
+			var reader *bufio.Reader
+			if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+				defer tty.Close()
+				reader = bufio.NewReader(tty)
+			} else {
+				reader = bufio.NewReader(os.Stdin)
+			}
+
+			_, _ = reader.ReadString('\n')
+			done <- true
+		}()
+
+		<-done
+	}
+
+	// Check if VM is already active
+	hasActiveVM, _ := page.Evaluate(`(() => {
+		const activeInfo = document.getElementById('active-machine-info');
+		if (!activeInfo) return false;
+		const text = activeInfo.innerText.toLowerCase();
+		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+	})()`)
+	if hasActiveVM.(bool) {
+		fmt.Println("Target VM is already running.")
+		if ip := logTargetIP(page, roomName); ip != "" {
+			startVPNAndScan(roomName, ip)
 		}
-	}()
+		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
+		browser.CleanScreenshots()
+		return
+	}
 
-	<-done
-
-	// Now try clicking the button again using JS click injection after expanding
-	fmt.Println("Attempting to click start machine button after login...")
-	val, err := page.Timeout(10 * time.Second).Evaluate(`(async () => {
+	// Try clicking the start machine button automatically using JS click injection.
+	fmt.Println("Checking for start machine button...")
+	clicked, clickErr := page.Timeout(10 * time.Second).Evaluate(`(async () => {
 		// 1. Wait for header-1 to render in the DOM (polling for up to 5 seconds)
 		await new Promise((resolve) => {
 			const timeout = setTimeout(resolve, 5000);
@@ -236,18 +233,18 @@ func Start(roomName string) {
 		return false;
 	})()`)
 
-	if err != nil || val == false {
-		fmt.Printf("Warning: Click failed after login (button not found or clicked): %v (found: %v)\n", err, val)
-	} else {
-		fmt.Println("Clicked start machine button successfully!")
+	if clickErr == nil && clicked.(bool) {
+		fmt.Println("Successfully clicked start machine button automatically!")
 		if ip := logTargetIP(page, roomName); ip != "" {
 			startVPNAndScan(roomName, ip)
 		}
+	} else {
+		fmt.Printf("Warning: Click failed (button not found or clicked): %v (found: %v)\n", clickErr, clicked)
 	}
 
 	// Save session state
-	fmt.Printf("Saving current session state to %s...\n", SESSION_FILE)
-	err = ctx.SaveState(SESSION_FILE)
+	fmt.Printf("Saving current session state to %s...\n", browser.SESSION_FILE)
+	err = ctx.SaveState(browser.SESSION_FILE)
 	if err != nil {
 		fmt.Printf("Error saving session state: %v\n", err)
 	} else {
@@ -261,7 +258,7 @@ func Start(roomName string) {
 func Extend(roomName string) {
 	roomURL := "https://tryhackme.com/room/" + roomName
 	hasSession := false
-	if _, err := os.Stat(SESSION_FILE); err == nil {
+	if _, err := os.Stat(browser.SESSION_FILE); err == nil {
 		hasSession = true
 	}
 
@@ -281,57 +278,11 @@ func Extend(roomName string) {
 
 	time.Sleep(3 * time.Second)
 
-	// Step 1: Check if we are logged in.
-	isLoggedInVal, err := page.Timeout(3 * time.Second).Evaluate(`(() => {
-		return !!(
-			document.querySelector('.profile-avatar') || 
-			document.querySelector('.nav-user') || 
-			document.querySelector('#start-attackbox') ||
-			document.querySelector('#active-machine-info') ||
-			document.querySelector('[id^="start-machine-button"]')
-		);
-	})()`)
+	isLoggedIn := checkLoggedIn(page)
 
-	isLoggedIn := false
-	if err == nil {
-		isLoggedIn = isLoggedInVal.(bool)
-	}
-
-	if isLoggedIn {
-		fmt.Println("Session is valid! Checking target VM status...")
-
-		// Check if VM is active
-		hasActiveVM, _ := page.Evaluate(`(() => {
-			const activeInfo = document.getElementById('active-machine-info');
-			if (!activeInfo) return false;
-			const text = activeInfo.innerText.toLowerCase();
-			return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
-		})()`)
-		if !hasActiveVM.(bool) {
-			fmt.Println("Target VM is not running. Cannot extend VM.")
-			fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-			_ = ctx.SaveState(SESSION_FILE)
-			browser.CleanScreenshots()
-			return
-		}
-
-		// Attempt to click the "Add 1 hour" button
-		fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
-		err = page.Timeout(5 * time.Second).GetByText("Add 1 hour").Click()
-		if err == nil {
-			fmt.Println("Successfully clicked 'Add 1 hour' button automatically!")
-			fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-			_ = ctx.SaveState(SESSION_FILE)
-			browser.CleanScreenshots()
-			time.Sleep(2 * time.Second)
-			return
-		}
-		fmt.Println("Warning: Logged in, but failed to click 'Add 1 hour' button automatically.")
-	}
-
-	// If click failed and we were headless, relaunch headfully
+	// If we are NOT logged in and we were running headlessly, relaunch headfully
 	if !isLoggedIn && hasSession {
-		fmt.Println("Session expired or invalid. Relaunching in headful mode to allow login...")
+		fmt.Println("Session expired, invalid or blocked. Relaunching in headful mode to allow login...")
 		b.Close() // Close headless browser
 
 		b, ctx, page, err = browser.Launch(false)
@@ -343,60 +294,86 @@ func Extend(roomName string) {
 		fmt.Printf("Navigating to %s (headful)...\n", roomURL)
 		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
 		time.Sleep(3 * time.Second)
+
+		isLoggedIn = checkLoggedIn(page)
 	}
 
-	// Prompt the user to log in
-	fmt.Println("\n============================================================")
-	fmt.Println("INSTRUCTIONS:")
-	fmt.Println("1. If you are not logged in, please log in now in the browser window.")
-	fmt.Println("2. Press [ENTER] or [Ctrl+C] in this terminal to save session & extend VM.")
-	fmt.Println("============================================================")
+	// Capture a debug screenshot of the headful window just in case
+	_ = page.Screenshot(filepath.Join(os.TempDir(), "debug-screenshot.png"))
 
-	done := make(chan bool, 1)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		done <- true
-	}()
+	// If still not logged in, prompt user to log in
+	if !isLoggedIn {
+		fmt.Println("\n============================================================")
+		fmt.Println("INSTRUCTIONS:")
+		fmt.Println("1. Please log in now in the browser window.")
+		fmt.Println("2. The script will automatically detect once you are logged in, or")
+		fmt.Println("   you can press [ENTER] in this terminal to force continue.")
+		fmt.Println("============================================================")
 
-	go func() {
-		var reader *bufio.Reader
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			defer tty.Close()
-			reader = bufio.NewReader(tty)
-		} else {
-			reader = bufio.NewReader(os.Stdin)
-		}
-		for {
-			_, err := reader.ReadString('\n')
-			if err == nil {
-				done <- true
-				return
+		done := make(chan bool, 1)
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			done <- true
+		}()
+
+		// Goroutine to poll login status
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if page.IsClosed() {
+						return
+					}
+					if checkLoggedInWithTimeout(page, 1*time.Second) {
+						fmt.Println("\nLogin detected automatically!")
+						done <- true
+						return
+					}
+					time.Sleep(1500 * time.Millisecond)
+				}
 			}
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
+		}()
 
-	<-done
+		// Goroutine to wait for manual Enter key
+		go func() {
+			var reader *bufio.Reader
+			if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+				defer tty.Close()
+				reader = bufio.NewReader(tty)
+			} else {
+				reader = bufio.NewReader(os.Stdin)
+			}
+			_, _ = reader.ReadString('\n')
+			done <- true
+		}()
 
-	// Check if VM is active after login
-	hasActiveVMPost, _ := page.Evaluate(`(() => {
+		<-done
+	}
+
+	// Now we are logged in (or forced to continue)
+	// Check if VM is active
+	fmt.Println("Checking target VM status...")
+	hasActiveVM, _ := page.Evaluate(`(() => {
 		const activeInfo = document.getElementById('active-machine-info');
 		if (!activeInfo) return false;
 		const text = activeInfo.innerText.toLowerCase();
 		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
 	})()`)
 
-	if !hasActiveVMPost.(bool) {
+	if !hasActiveVM.(bool) {
 		fmt.Println("Target VM is not running. Cannot extend VM.")
-		fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-		_ = ctx.SaveState(SESSION_FILE)
+		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
 		browser.CleanScreenshots()
 		return
 	}
 
-	fmt.Println("Attempting to click 'Add 1 hour' button after login...")
+	// Attempt to click the "Add 1 hour" button
+	fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
 	err = page.Timeout(5 * time.Second).GetByText("Add 1 hour").Click()
 	if err != nil {
 		fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", err)
@@ -404,8 +381,8 @@ func Extend(roomName string) {
 		fmt.Println("Successfully clicked 'Add 1 hour' button!")
 	}
 
-	fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-	_ = ctx.SaveState(SESSION_FILE)
+	fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+	_ = ctx.SaveState(browser.SESSION_FILE)
 	browser.CleanScreenshots()
 	time.Sleep(2 * time.Second)
 }
@@ -419,7 +396,7 @@ func Terminate(roomName string) {
 
 	roomURL := "https://tryhackme.com/room/" + roomName
 	hasSession := false
-	if _, err := os.Stat(SESSION_FILE); err == nil {
+	if _, err := os.Stat(browser.SESSION_FILE); err == nil {
 		hasSession = true
 	}
 
@@ -439,85 +416,11 @@ func Terminate(roomName string) {
 
 	time.Sleep(3 * time.Second)
 
-	// Step 1: Check if we are logged in.
-	isLoggedInVal, err := page.Timeout(3 * time.Second).Evaluate(`(() => {
-		return !!(
-			document.querySelector('.profile-avatar') || 
-			document.querySelector('.nav-user') || 
-			document.querySelector('#start-attackbox') ||
-			document.querySelector('#active-machine-info') ||
-			document.querySelector('[id^="start-machine-button"]')
-		);
-	})()`)
-
-	isLoggedIn := false
-	if err == nil {
-		isLoggedIn = isLoggedInVal.(bool)
-	}
-
-	if isLoggedIn {
-		fmt.Println("Session is valid! Checking target VM status...")
-
-		// Check if VM is active
-		hasActiveVM, _ := page.Evaluate(`(() => {
-			const activeInfo = document.getElementById('active-machine-info');
-			if (!activeInfo) return false;
-			const text = activeInfo.innerText.toLowerCase();
-			return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
-		})()`)
-		if !hasActiveVM.(bool) {
-			fmt.Println("Target VM is not running. Nothing to terminate.")
-			_ = hosts.RemoveEntry(roomName)
-			fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-			_ = ctx.SaveState(SESSION_FILE)
-			browser.CleanScreenshots()
-			return
-		}
-
-		// Proceed to terminate the active VM
-		fmt.Println("Locating 'Terminate' button...")
-		val, err := page.Evaluate(`(() => {
-			const btns = Array.from(document.querySelectorAll('button')).filter(b => b.innerText.toLowerCase().includes("terminate"));
-			if (btns.length > 0) {
-				btns[0].click();
-				return true;
-			}
-			return false;
-		})()`)
-
-		if err == nil && val == true {
-			fmt.Println("Clicked initial 'Terminate' button. Confirming...")
-			time.Sleep(1 * time.Second)
-			valConf, errConf := page.Evaluate(`(() => {
-				const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-					const style = window.getComputedStyle(b);
-					return b.innerText.toLowerCase().includes("terminate") && style.display !== 'none' && style.visibility !== 'hidden';
-				});
-				if (btns.length > 1) {
-					btns[btns.length - 1].click(); // Confirmation modal button
-					return true;
-				} else if (btns.length === 1) {
-					btns[0].click();
-					return true;
-				}
-				return false;
-			})()`)
-			if errConf == nil && valConf == true {
-				fmt.Println("Successfully clicked confirmation button! Terminating VM...")
-				_ = hosts.RemoveEntry(roomName)
-				fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-				_ = ctx.SaveState(SESSION_FILE)
-				browser.CleanScreenshots()
-				time.Sleep(3 * time.Second)
-				return
-			}
-		}
-		fmt.Println("Warning: Logged in, but failed to click 'Terminate' button automatically.")
-	}
+	isLoggedIn := checkLoggedIn(page)
 
 	// If we are NOT logged in and we were running headlessly, relaunch headfully
 	if !isLoggedIn && hasSession {
-		fmt.Println("Session expired or invalid. Relaunching in headful mode to allow login...")
+		fmt.Println("Session expired, invalid or blocked. Relaunching in headful mode to allow login...")
 		b.Close() // Close headless browser
 
 		b, ctx, page, err = browser.Launch(false)
@@ -529,63 +432,88 @@ func Terminate(roomName string) {
 		fmt.Printf("Navigating to %s (headful)...\n", roomURL)
 		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
 		time.Sleep(3 * time.Second)
+
+		isLoggedIn = checkLoggedIn(page)
 	}
 
-	// Prompt the user to log in
-	fmt.Println("\n============================================================")
-	fmt.Println("INSTRUCTIONS:")
-	fmt.Println("1. If you are not logged in, please log in now in the browser window.")
-	fmt.Println("2. Press [ENTER] or [Ctrl+C] in this terminal to save session & terminate VM.")
-	fmt.Println("============================================================")
+	// Capture a debug screenshot of the headful window just in case
+	_ = page.Screenshot(filepath.Join(os.TempDir(), "debug-screenshot.png"))
 
-	done := make(chan bool, 1)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		done <- true
-	}()
+	// If still not logged in, prompt user to log in
+	if !isLoggedIn {
+		fmt.Println("\n============================================================")
+		fmt.Println("INSTRUCTIONS:")
+		fmt.Println("1. Please log in now in the browser window.")
+		fmt.Println("2. The script will automatically detect once you are logged in, or")
+		fmt.Println("   you can press [ENTER] in this terminal to force continue.")
+		fmt.Println("============================================================")
 
-	go func() {
-		var reader *bufio.Reader
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			defer tty.Close()
-			reader = bufio.NewReader(tty)
-		} else {
-			reader = bufio.NewReader(os.Stdin)
-		}
-		for {
-			_, err := reader.ReadString('\n')
-			if err == nil {
-				done <- true
-				return
+		done := make(chan bool, 1)
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			done <- true
+		}()
+
+		// Goroutine to poll login status
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if page.IsClosed() {
+						return
+					}
+					if checkLoggedInWithTimeout(page, 1*time.Second) {
+						fmt.Println("\nLogin detected automatically!")
+						done <- true
+						return
+					}
+					time.Sleep(1500 * time.Millisecond)
+				}
 			}
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
+		}()
 
-	<-done
+		// Goroutine to wait for manual Enter key
+		go func() {
+			var reader *bufio.Reader
+			if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+				defer tty.Close()
+				reader = bufio.NewReader(tty)
+			} else {
+				reader = bufio.NewReader(os.Stdin)
+			}
+			_, _ = reader.ReadString('\n')
+			done <- true
+		}()
 
-	// Check if VM is active after login
-	hasActiveVMPost, _ := page.Evaluate(`(() => {
+		<-done
+	}
+
+	// Now we are logged in (or forced to continue)
+	// Check if VM is active
+	fmt.Println("Checking target VM status...")
+	hasActiveVM, _ := page.Evaluate(`(() => {
 		const activeInfo = document.getElementById('active-machine-info');
 		if (!activeInfo) return false;
 		const text = activeInfo.innerText.toLowerCase();
 		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
 	})()`)
 
-	if !hasActiveVMPost.(bool) {
+	if !hasActiveVM.(bool) {
 		fmt.Println("Target VM is not running. Nothing to terminate.")
 		_ = hosts.RemoveEntry(roomName)
-		fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-		_ = ctx.SaveState(SESSION_FILE)
+		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
 		browser.CleanScreenshots()
 		return
 	}
 
-	// Step 1: Click the initial Terminate button again after login
-	fmt.Println("Locating 'Terminate' button after login...")
-	_, _ = page.Evaluate(`(() => {
+	// Proceed to terminate the active VM
+	fmt.Println("Locating 'Terminate' button...")
+	val, err := page.Evaluate(`(() => {
 		const btns = Array.from(document.querySelectorAll('button')).filter(b => b.innerText.toLowerCase().includes("terminate"));
 		if (btns.length > 0) {
 			btns[0].click();
@@ -594,31 +522,39 @@ func Terminate(roomName string) {
 		return false;
 	})()`)
 
-	time.Sleep(1 * time.Second)
-
-	// Step 2: Confirm
-	fmt.Println("Confirming termination after login...")
-	_, _ = page.Evaluate(`(() => {
-		const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-			const style = window.getComputedStyle(b);
-			return b.innerText.toLowerCase().includes("terminate") && style.display !== 'none' && style.visibility !== 'hidden';
-		});
-		if (btns.length > 1) {
-			btns[btns.length - 1].click();
-			return true;
-		} else if (btns.length === 1) {
-			btns[0].click();
-			return true;
+	if err == nil && val == true {
+		fmt.Println("Clicked initial 'Terminate' button. Confirming...")
+		time.Sleep(1 * time.Second)
+		valConf, errConf := page.Evaluate(`(() => {
+			const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+				const style = window.getComputedStyle(b);
+				return b.innerText.toLowerCase().includes("terminate") && style.display !== 'none' && style.visibility !== 'hidden';
+			});
+			if (btns.length > 1) {
+				btns[btns.length - 1].click(); // Confirmation modal button
+				return true;
+			} else if (btns.length === 1) {
+				btns[0].click();
+				return true;
+			}
+			return false;
+		})()`)
+		if errConf == nil && valConf == true {
+			fmt.Println("Successfully terminated VM!")
+			_ = hosts.RemoveEntry(roomName)
+			fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+			_ = ctx.SaveState(browser.SESSION_FILE)
+			browser.CleanScreenshots()
+			time.Sleep(3 * time.Second)
+			return
 		}
-		return false;
-	})()`)
+	}
 
-	fmt.Printf("Saving updated session state to %s...\n", SESSION_FILE)
-	_ = ctx.SaveState(SESSION_FILE)
-	_ = hosts.RemoveEntry(roomName)
+	fmt.Println("Warning: Failed to click 'Terminate' button automatically.")
+	fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+	_ = ctx.SaveState(browser.SESSION_FILE)
 	browser.CleanScreenshots()
-	time.Sleep(3 * time.Second)
-	fmt.Println("Done!")
+	time.Sleep(1 * time.Second)
 }
 
 // LoopExtend runs Extend every 30 minutes until terminated with Ctrl+C
