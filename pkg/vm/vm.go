@@ -25,7 +25,7 @@ func checkLoggedIn(page *bonk.Page) bool {
 				document.querySelector('.nav-user') || 
 				document.querySelector('#start-attackbox') ||
 				document.querySelector('#active-machine-info') ||
-				document.querySelector('[id^="start-machine-button"]')
+				document.querySelector('[id^="start-machine-button"]:not([disabled])')
 			) {
 				return true;
 			}
@@ -57,7 +57,7 @@ func checkLoggedInWithTimeout(page *bonk.Page, timeout time.Duration) bool {
 			document.querySelector('.nav-user') || 
 			document.querySelector('#start-attackbox') ||
 			document.querySelector('#active-machine-info') ||
-			document.querySelector('[id^="start-machine-button"]')
+			document.querySelector('[id^="start-machine-button"]:not([disabled])')
 		);
 	})()`)
 	if err != nil {
@@ -227,6 +227,9 @@ func Start(roomName string) {
 		const btn = document.getElementById('start-machine-button-1') || 
 		            document.querySelector('[id^="start-machine-button"]');
 		if (btn) {
+			if (btn.disabled) {
+				return false;
+			}
 			btn.click();
 			return true;
 		}
@@ -667,26 +670,42 @@ func runVPN(action string) error {
 }
 
 func runScan(roomName string, ip string) {
-	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
 	workspaceDir, err := getWorkspaceDir()
 	if err != nil {
 		fmt.Printf("Warning: could not determine workspace directory for scan: %v\n", err)
 		return
 	}
 
+	roomDir := filepath.Join(workspaceDir, roomName)
+	roomDirExists := false
+	if fi, err := os.Stat(roomDir); err == nil && fi.IsDir() {
+		roomDirExists = true
+	}
+
+	nmapPath := filepath.Join(roomDir, roomName+".nmap")
+	nmapExists := false
+	if _, err := os.Stat(nmapPath); err == nil {
+		nmapExists = true
+	}
+
+	if roomDirExists && nmapExists {
+		fmt.Printf("Directory %s already exists and nmap scan %s is already done. Skipping scan.\n", roomDir, nmapPath)
+		return
+	}
+
+	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
 	scanPath := filepath.Join(workspaceDir, "scan.sh")
 	if _, err := os.Stat(scanPath); err != nil {
 		fmt.Printf("Warning: scan.sh not found at %s: %v\n", scanPath, err)
 		return
 	}
 
-	roomDir := filepath.Join(workspaceDir, roomName)
 	if err := os.MkdirAll(roomDir, 0755); err != nil {
 		fmt.Printf("Warning: failed to create room directory %s: %v\n", roomDir, err)
 		return
 	}
 
-	cmd := exec.Command(scanPath, ip)
+	cmd := exec.Command(scanPath, "-n", roomName, ip)
 	cmd.Dir = roomDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
