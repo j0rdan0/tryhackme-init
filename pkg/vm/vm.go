@@ -676,7 +676,11 @@ func runScan(roomName string, ip string) {
 		return
 	}
 
-	roomDir := filepath.Join(workspaceDir, roomName)
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	roomDir := filepath.Join(cwd, roomName)
 	roomDirExists := false
 	if fi, err := os.Stat(roomDir); err == nil && fi.IsDir() {
 		roomDirExists = true
