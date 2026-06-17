@@ -191,3 +191,8 @@ if [ -f "${OUTPUT_FILE}" ]; then
     done < "${OUTPUT_FILE}"
 fi
 
+if [ -d "$NAME" ] && [ "$(basename "$PWD")" != "$NAME" ]; then
+    cd "$NAME"
+fi
+
+
