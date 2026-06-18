@@ -695,8 +695,8 @@ func printIP(ip string, roomName string) {
 	fmt.Printf("============================================================\n\n")
 }
 
-func getWorkspaceDir() (string, error) {
-	// Try to find vpn.sh in various directories
+func findScript(name string) (string, error) {
+	// Search in current dir, parent dir, executable dir, and executable parent dir
 	searchDirs := []string{".", ".."}
 
 	if exePath, err := os.Executable(); err == nil {
@@ -705,39 +705,32 @@ func getWorkspaceDir() (string, error) {
 	}
 
 	for _, dir := range searchDirs {
-		p := filepath.Join(dir, "vpn.sh")
+		p := filepath.Join(dir, name)
 		if _, err := os.Stat(p); err == nil {
 			absPath, err := filepath.Abs(p)
 			if err != nil {
 				return "", err
 			}
-			return filepath.Dir(absPath), nil
+			return absPath, nil
 		}
 	}
-	return "", fmt.Errorf("vpn.sh not found in search paths")
+	return "", fmt.Errorf("%s not found in search paths", name)
 }
 
 func runVPN(action string) error {
-	workspaceDir, err := getWorkspaceDir()
+	vpnPath, err := findScript("vpn.sh")
 	if err != nil {
 		return err
 	}
 
-	vpnPath := filepath.Join(workspaceDir, "vpn.sh")
 	cmd := exec.Command(vpnPath, action)
-	cmd.Dir = workspaceDir
+	cmd.Dir = filepath.Dir(vpnPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 func runScan(roomName string, ip string) {
-	workspaceDir, err := getWorkspaceDir()
-	if err != nil {
-		fmt.Printf("Warning: could not determine workspace directory for scan: %v\n", err)
-		return
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
@@ -759,12 +752,13 @@ func runScan(roomName string, ip string) {
 		return
 	}
 
-	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
-	scanPath := filepath.Join(workspaceDir, "scan.sh")
-	if _, err := os.Stat(scanPath); err != nil {
-		fmt.Printf("Warning: scan.sh not found at %s: %v\n", scanPath, err)
+	scanPath, err := findScript("scan.sh")
+	if err != nil {
+		fmt.Printf("Warning: %v\n", err)
 		return
 	}
+
+	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
 
 	if err := os.MkdirAll(roomDir, 0755); err != nil {
 		fmt.Printf("Warning: failed to create room directory %s: %v\n", roomDir, err)
