@@ -41,6 +41,18 @@ fi
 
 HOST="$1"
 
+if [ -z "$NAME" ]; then
+    NAME="${HOST}"
+fi
+
+# Create and enter the room directory if not already there
+if [ "$(basename "$PWD")" != "$NAME" ]; then
+    if [ ! -d "$NAME" ]; then
+        mkdir -p "$NAME"
+    fi
+    cd "$NAME"
+fi
+
 # Wait for the host to become reachable (VPN route to establish)
 echo "Waiting for host ${HOST} to become reachable..."
 ping_success=false
@@ -115,9 +127,7 @@ if [ "$UDP_SCAN" = true ]; then
     SUFFIX="${SUFFIX}-udp"
 fi
 
-if [ -z "$NAME" ]; then
-    NAME="${HOST}"
-fi
+
 
 OUTPUT_FILE="${NAME}${SUFFIX}.nmap"
 
@@ -189,10 +199,6 @@ if [ -f "${OUTPUT_FILE}" ]; then
             fi
         fi
     done < "${OUTPUT_FILE}"
-fi
-
-if [ -d "$NAME" ] && [ "$(basename "$PWD")" != "$NAME" ]; then
-    cd "$NAME"
 fi
 
 

@@ -11,9 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joakimcarlsson/bonk"
 	"extend-vm/pkg/browser"
 	"extend-vm/pkg/hosts"
+
+	"github.com/joakimcarlsson/bonk"
 )
 
 func checkLoggedIn(page *bonk.Page) bool {
@@ -25,6 +26,7 @@ func checkLoggedIn(page *bonk.Page) bool {
 				document.querySelector('.nav-user') || 
 				document.querySelector('#start-attackbox') ||
 				document.querySelector('#active-machine-info') ||
+				document.querySelector('[id^="active-machines-information"]') ||
 				document.querySelector('[id^="start-machine-button"]:not([disabled])')
 			) {
 				return true;
@@ -57,6 +59,7 @@ func checkLoggedInWithTimeout(page *bonk.Page, timeout time.Duration) bool {
 			document.querySelector('.nav-user') || 
 			document.querySelector('#start-attackbox') ||
 			document.querySelector('#active-machine-info') ||
+			document.querySelector('[id^="active-machines-information"]') ||
 			document.querySelector('[id^="start-machine-button"]:not([disabled])')
 		);
 	})()`)
@@ -98,6 +101,7 @@ func Start(roomName string) {
 	}
 
 	isLoggedIn := checkLoggedIn(page)
+
 
 	// If we are NOT logged in and we were running headlessly, relaunch headfully
 	if !isLoggedIn && hasSession {
@@ -178,10 +182,20 @@ func Start(roomName string) {
 
 	// Check if VM is already active
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 	if hasActiveVM.(bool) {
 		fmt.Println("Target VM is already running.")
@@ -191,6 +205,7 @@ func Start(roomName string) {
 		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
 		_ = ctx.SaveState(browser.SESSION_FILE)
 		browser.CleanScreenshots()
+		dropIntoShell(roomName)
 		return
 	}
 
@@ -256,6 +271,25 @@ func Start(roomName string) {
 
 	browser.CleanScreenshots()
 	time.Sleep(1 * time.Second)
+	dropIntoShell(roomName)
+}
+
+func dropIntoShell(roomName string) {
+	// Ensure we are in the room directory
+	if fi, err := os.Stat(roomName); err == nil && fi.IsDir() {
+		_ = os.Chdir(roomName)
+	}
+	
+	if targetCwd, err := os.Getwd(); err == nil {
+		fmt.Printf("Dropping into shell in: %s\n", targetCwd)
+	}
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	env := os.Environ()
+	_ = syscall.Exec(shell, []string{shell}, env)
 }
 
 func Extend(roomName string) {
@@ -361,10 +395,20 @@ func Extend(roomName string) {
 	// Check if VM is active
 	fmt.Println("Checking target VM status...")
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 
 	if !hasActiveVM.(bool) {
@@ -499,10 +543,20 @@ func Terminate(roomName string) {
 	// Check if VM is active
 	fmt.Println("Checking target VM status...")
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 
 	if !hasActiveVM.(bool) {
@@ -593,7 +647,11 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 
 	// Fast check first
 	val, err := page.Evaluate(`(() => {
-		const el = document.getElementById('active-machine-info') || document.body;
+		const el = document.getElementById('active-machine-info') || 
+		           document.getElementById('active-machines-information-header') || 
+		           document.querySelector('[id^="active-machines-information"]') ||
+		           document.querySelector('[class*="active-machines-information"]') ||
+		           document.body;
 		const match = el.innerText.match(/\b(10\.\d+\.\d+\.\d+)\b/);
 		return match ? match[1] : "";
 	})()`)
@@ -609,7 +667,11 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 	fmt.Println("Waiting for IP address to be assigned (polling for up to 90s)...")
 	for i := 0; i < 45; i++ {
 		val, err := page.Evaluate(`(() => {
-			const el = document.getElementById('active-machine-info') || document.body;
+			const el = document.getElementById('active-machine-info') || 
+			           document.getElementById('active-machines-information-header') || 
+			           document.querySelector('[id^="active-machines-information"]') ||
+			           document.querySelector('[class*="active-machines-information"]') ||
+			           document.body;
 			const match = el.innerText.match(/\b(10\.\d+\.\d+\.\d+)\b/);
 			return match ? match[1] : "";
 		})()`)
@@ -709,8 +771,13 @@ func runScan(roomName string, ip string) {
 		return
 	}
 
+	// cd into the new VM directory
+	if err := os.Chdir(roomDir); err != nil {
+		fmt.Printf("Warning: failed to cd into room directory %s: %v\n", roomDir, err)
+		return
+	}
+
 	cmd := exec.Command(scanPath, "-n", roomName, ip)
-	cmd.Dir = roomDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
