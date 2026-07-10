@@ -11,3 +11,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/image v0.37.0 // indirect
 )
+
+replace github.com/joakimcarlsson/bonk => ./bonk
+
