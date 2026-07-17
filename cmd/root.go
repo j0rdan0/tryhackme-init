@@ -30,6 +30,8 @@ var rootCmd = &cobra.Command{
 				terminateCmd.Run(terminateCmd, []string{roomName})
 			case "loop":
 				loopCmd.Run(loopCmd, []string{roomName})
+			case "daemon":
+				daemonCmd.Run(daemonCmd, []string{roomName})
 			default:
 				fmt.Printf("Unknown action: %s. Usage: init-vm <room_name> [start|extend|terminate|loop]\n", action)
 				os.Exit(1)

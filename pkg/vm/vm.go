@@ -11,9 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joakimcarlsson/bonk"
 	"extend-vm/pkg/browser"
 	"extend-vm/pkg/hosts"
+
+	"github.com/joakimcarlsson/bonk"
 )
 
 func checkLoggedIn(page *bonk.Page) bool {
@@ -25,6 +26,7 @@ func checkLoggedIn(page *bonk.Page) bool {
 				document.querySelector('.nav-user') || 
 				document.querySelector('#start-attackbox') ||
 				document.querySelector('#active-machine-info') ||
+				document.querySelector('[id^="active-machines-information"]') ||
 				document.querySelector('[id^="start-machine-button"]:not([disabled])')
 			) {
 				return true;
@@ -57,6 +59,7 @@ func checkLoggedInWithTimeout(page *bonk.Page, timeout time.Duration) bool {
 			document.querySelector('.nav-user') || 
 			document.querySelector('#start-attackbox') ||
 			document.querySelector('#active-machine-info') ||
+			document.querySelector('[id^="active-machines-information"]') ||
 			document.querySelector('[id^="start-machine-button"]:not([disabled])')
 		);
 	})()`)
@@ -98,6 +101,7 @@ func Start(roomName string) {
 	}
 
 	isLoggedIn := checkLoggedIn(page)
+
 
 	// If we are NOT logged in and we were running headlessly, relaunch headfully
 	if !isLoggedIn && hasSession {
@@ -178,10 +182,20 @@ func Start(roomName string) {
 
 	// Check if VM is already active
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 	if hasActiveVM.(bool) {
 		fmt.Println("Target VM is already running.")
@@ -191,6 +205,8 @@ func Start(roomName string) {
 		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
 		_ = ctx.SaveState(browser.SESSION_FILE)
 		browser.CleanScreenshots()
+		startLoopDaemon(roomName)
+		dropIntoShell(roomName)
 		return
 	}
 
@@ -256,6 +272,26 @@ func Start(roomName string) {
 
 	browser.CleanScreenshots()
 	time.Sleep(1 * time.Second)
+	startLoopDaemon(roomName)
+	dropIntoShell(roomName)
+}
+
+func dropIntoShell(roomName string) {
+	// Ensure we are in the room directory
+	if fi, err := os.Stat(roomName); err == nil && fi.IsDir() {
+		_ = os.Chdir(roomName)
+	}
+	
+	if targetCwd, err := os.Getwd(); err == nil {
+		fmt.Printf("Dropping into shell in: %s\n", targetCwd)
+	}
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	env := os.Environ()
+	_ = syscall.Exec(shell, []string{shell}, env)
 }
 
 func Extend(roomName string) {
@@ -361,27 +397,82 @@ func Extend(roomName string) {
 	// Check if VM is active
 	fmt.Println("Checking target VM status...")
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 
 	if !hasActiveVM.(bool) {
-		fmt.Println("Target VM is not running. Cannot extend VM.")
-		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
-		_ = ctx.SaveState(browser.SESSION_FILE)
-		browser.CleanScreenshots()
-		return
-	}
+		fmt.Println("Target VM is not running. Starting VM...")
+		fmt.Println("Checking for start machine button...")
+		clicked, clickErr := page.Timeout(10 * time.Second).Evaluate(`(async () => {
+			// 1. Wait for header-1 to render in the DOM (polling for up to 5 seconds)
+			await new Promise((resolve) => {
+				const timeout = setTimeout(resolve, 5000);
+				const check = () => {
+					if (document.getElementById('header-1')) {
+						clearTimeout(timeout);
+						resolve();
+					} else {
+						setTimeout(check, 250);
+					}
+				};
+				check();
+			});
 
-	// Attempt to click the "Add 1 hour" button
-	fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
-	err = page.Timeout(5 * time.Second).GetByText("Add 1 hour").Click()
-	if err != nil {
-		fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", err)
+			// 2. Expand header-1 if collapsed
+			const h = document.getElementById('header-1');
+			if (h) {
+				const expanded = h.getAttribute('aria-expanded');
+				if (expanded === 'false' || expanded === null) {
+					h.click();
+				}
+			}
+			
+			// Wait 1s for DOM / React rendering
+			await new Promise(resolve => setTimeout(resolve, 1000));
+
+			// 3. Find and click the start machine button
+			const btn = document.getElementById('start-machine-button-1') || 
+			            document.querySelector('[id^="start-machine-button"]');
+			if (btn) {
+				if (btn.disabled) {
+					return false;
+				}
+				btn.click();
+				return true;
+			}
+			return false;
+		})()`)
+
+		if clickErr == nil && clicked.(bool) {
+			fmt.Println("Successfully clicked start machine button automatically!")
+			if ip := logTargetIP(page, roomName); ip != "" {
+				startVPNAndScan(roomName, ip)
+			}
+		} else {
+			fmt.Printf("Warning: Click failed (button not found or clicked): %v (found: %v)\n", clickErr, clicked)
+		}
 	} else {
-		fmt.Println("Successfully clicked 'Add 1 hour' button!")
+		// Attempt to click the "Add 1 hour" button
+		fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
+		err = page.Timeout(5 * time.Second).GetByText("Add 1 hour").Click()
+		if err != nil {
+			fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", err)
+		} else {
+			fmt.Println("Successfully clicked 'Add 1 hour' button!")
+		}
 	}
 
 	fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
@@ -391,6 +482,9 @@ func Extend(roomName string) {
 }
 
 func Terminate(roomName string) {
+	// Stop the loop daemon if running
+	stopLoopDaemon(roomName)
+
 	// Call vpn.sh stop script
 	fmt.Println("Stopping VPN...")
 	if err := runVPN("stop"); err != nil {
@@ -499,10 +593,20 @@ func Terminate(roomName string) {
 	// Check if VM is active
 	fmt.Println("Checking target VM status...")
 	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info');
-		if (!activeInfo) return false;
-		const text = activeInfo.innerText.toLowerCase();
-		return text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text);
+		const activeInfo = document.getElementById('active-machine-info') || 
+		                   document.getElementById('active-machines-information-header') ||
+		                   document.querySelector('[id^="active-machines-information"]') ||
+		                   document.querySelector('[class*="active-machines-information"]');
+		if (activeInfo) {
+			const text = activeInfo.innerText.toLowerCase();
+			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+				return true;
+			}
+		}
+		const btns = Array.from(document.querySelectorAll('button'));
+		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+		return hasTerminate || hasAddHour;
 	})()`)
 
 	if !hasActiveVM.(bool) {
@@ -560,10 +664,91 @@ func Terminate(roomName string) {
 	time.Sleep(1 * time.Second)
 }
 
+func startLoopDaemon(roomName string) {
+	// Let's check if there is a running loop daemon PID file
+	pidFile := filepath.Join(os.TempDir(), fmt.Sprintf("init-vm-loop-%s.pid", roomName))
+	if data, err := os.ReadFile(pidFile); err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil {
+			// Check if process is still running
+			if process, err := os.FindProcess(pid); err == nil {
+				// On Unix/macOS, sending signal 0 checks if process exists
+				if err := process.Signal(syscall.Signal(0)); err == nil {
+					fmt.Printf("Loop daemon already running for room %s (PID %d)\n", roomName, pid)
+					return
+				}
+			}
+		}
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Warning: could not get executable path to start loop daemon: %v\n", err)
+		return
+	}
+
+	cmd := exec.Command(exe, roomName, "daemon")
+	
+	// Create a log file inside the room directory (or in /tmp if room directory doesn't exist)
+	logDir := roomName
+	if fi, err := os.Stat(roomName); err != nil || !fi.IsDir() {
+		logDir = os.TempDir()
+	}
+	logFile, err := os.OpenFile(filepath.Join(logDir, "loop.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	} else {
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+	}
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Warning: failed to start loop daemon in background: %v\n", err)
+	} else {
+		fmt.Printf("Started loop daemon in background (PID %d). Log file: %s\n", cmd.Process.Pid, filepath.Join(logDir, "loop.log"))
+		_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644)
+	}
+}
+
+func stopLoopDaemon(roomName string) {
+	pidFile := filepath.Join(os.TempDir(), fmt.Sprintf("init-vm-loop-%s.pid", roomName))
+	if data, err := os.ReadFile(pidFile); err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil {
+			if process, err := os.FindProcess(pid); err == nil {
+				fmt.Printf("Stopping loop daemon (PID %d)...", pid)
+				_ = process.Signal(syscall.SIGTERM)
+				
+				// Wait a bit for the process to exit
+				for i := 0; i < 20; i++ {
+					if err := process.Signal(syscall.Signal(0)); err != nil {
+						break
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+				if err := process.Signal(syscall.Signal(0)); err == nil {
+					_ = process.Kill()
+				}
+				fmt.Println(" Loop daemon stopped.")
+			}
+		}
+		_ = os.Remove(pidFile)
+	}
+}
+
 // LoopExtend runs Extend every 30 minutes until terminated with Ctrl+C
 func LoopExtend(roomName string) {
 	fmt.Printf("Starting auto-extend daemon for room '%s' (running every 30 minutes)...\n", roomName)
 	fmt.Println("Press [Ctrl+C] to stop this loop.")
+
+	// Write PID file for the loop
+	pidFile := filepath.Join(os.TempDir(), fmt.Sprintf("init-vm-loop-%s.pid", roomName))
+	_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
 
 	// Perform initial extension immediately
 	Extend(roomName)
@@ -579,6 +764,7 @@ func LoopExtend(roomName string) {
 		select {
 		case <-sigChan:
 			fmt.Println("\nAuto-extend daemon stopped.")
+			_ = os.Remove(pidFile)
 			return
 		case <-ticker.C:
 			fmt.Printf("[%s] Running scheduled extension...\n", time.Now().Format("15:04:05"))
@@ -593,7 +779,11 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 
 	// Fast check first
 	val, err := page.Evaluate(`(() => {
-		const el = document.getElementById('active-machine-info') || document.body;
+		const el = document.getElementById('active-machine-info') || 
+		           document.getElementById('active-machines-information-header') || 
+		           document.querySelector('[id^="active-machines-information"]') ||
+		           document.querySelector('[class*="active-machines-information"]') ||
+		           document.body;
 		const match = el.innerText.match(/\b(10\.\d+\.\d+\.\d+)\b/);
 		return match ? match[1] : "";
 	})()`)
@@ -609,7 +799,11 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 	fmt.Println("Waiting for IP address to be assigned (polling for up to 90s)...")
 	for i := 0; i < 45; i++ {
 		val, err := page.Evaluate(`(() => {
-			const el = document.getElementById('active-machine-info') || document.body;
+			const el = document.getElementById('active-machine-info') || 
+			           document.getElementById('active-machines-information-header') || 
+			           document.querySelector('[id^="active-machines-information"]') ||
+			           document.querySelector('[class*="active-machines-information"]') ||
+			           document.body;
 			const match = el.innerText.match(/\b(10\.\d+\.\d+\.\d+)\b/);
 			return match ? match[1] : "";
 		})()`)
@@ -633,8 +827,8 @@ func printIP(ip string, roomName string) {
 	fmt.Printf("============================================================\n\n")
 }
 
-func getWorkspaceDir() (string, error) {
-	// Try to find vpn.sh in various directories
+func findScript(name string) (string, error) {
+	// Search in current dir, parent dir, executable dir, and executable parent dir
 	searchDirs := []string{".", ".."}
 
 	if exePath, err := os.Executable(); err == nil {
@@ -643,40 +837,37 @@ func getWorkspaceDir() (string, error) {
 	}
 
 	for _, dir := range searchDirs {
-		p := filepath.Join(dir, "vpn.sh")
+		p := filepath.Join(dir, name)
 		if _, err := os.Stat(p); err == nil {
 			absPath, err := filepath.Abs(p)
 			if err != nil {
 				return "", err
 			}
-			return filepath.Dir(absPath), nil
+			return absPath, nil
 		}
 	}
-	return "", fmt.Errorf("vpn.sh not found in search paths")
+	return "", fmt.Errorf("%s not found in search paths", name)
 }
 
 func runVPN(action string) error {
-	workspaceDir, err := getWorkspaceDir()
+	vpnPath, err := findScript("vpn.sh")
 	if err != nil {
 		return err
 	}
 
-	vpnPath := filepath.Join(workspaceDir, "vpn.sh")
 	cmd := exec.Command(vpnPath, action)
-	cmd.Dir = workspaceDir
+	cmd.Dir = filepath.Dir(vpnPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 func runScan(roomName string, ip string) {
-	workspaceDir, err := getWorkspaceDir()
+	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Printf("Warning: could not determine workspace directory for scan: %v\n", err)
-		return
+		cwd = "."
 	}
-
-	roomDir := filepath.Join(workspaceDir, roomName)
+	roomDir := filepath.Join(cwd, roomName)
 	roomDirExists := false
 	if fi, err := os.Stat(roomDir); err == nil && fi.IsDir() {
 		roomDirExists = true
@@ -693,20 +884,26 @@ func runScan(roomName string, ip string) {
 		return
 	}
 
-	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
-	scanPath := filepath.Join(workspaceDir, "scan.sh")
-	if _, err := os.Stat(scanPath); err != nil {
-		fmt.Printf("Warning: scan.sh not found at %s: %v\n", scanPath, err)
+	scanPath, err := findScript("scan.sh")
+	if err != nil {
+		fmt.Printf("Warning: %v\n", err)
 		return
 	}
+
+	fmt.Printf("Starting scan.sh with IP %s...\n", ip)
 
 	if err := os.MkdirAll(roomDir, 0755); err != nil {
 		fmt.Printf("Warning: failed to create room directory %s: %v\n", roomDir, err)
 		return
 	}
 
+	// cd into the new VM directory
+	if err := os.Chdir(roomDir); err != nil {
+		fmt.Printf("Warning: failed to cd into room directory %s: %v\n", roomDir, err)
+		return
+	}
+
 	cmd := exec.Command(scanPath, "-n", roomName, ip)
-	cmd.Dir = roomDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

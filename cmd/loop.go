@@ -7,11 +7,11 @@ import (
 
 var loopCmd = &cobra.Command{
 	Use:   "loop [room_name]",
-	Short: "Keep extending the VM every 30 minutes (daemon mode)",
+	Short: "Start the target VM, configure VPN/scan, and run the auto-extend daemon in the background",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		roomName := args[0]
-		vm.LoopExtend(roomName)
+		vm.Start(roomName)
 	},
 }
 

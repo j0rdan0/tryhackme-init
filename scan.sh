@@ -41,9 +41,81 @@ fi
 
 HOST="$1"
 
+if [ -z "$NAME" ]; then
+    NAME="${HOST}"
+fi
+
+# Create and enter the room directory if not already there
+if [ "$(basename "$PWD")" != "$NAME" ]; then
+    if [ ! -d "$NAME" ]; then
+        mkdir -p "$NAME"
+    fi
+    cd "$NAME"
+fi
+
+# Wait for the host to become reachable (VPN route to establish)
+echo "Waiting for host ${HOST} to become reachable..."
+ping_success=false
+for i in {1..30}; do
+    if [ "$(uname)" = "Darwin" ]; then
+        if ping -c 1 -t 2 "${HOST}" >/dev/null 2>&1; then
+            ping_success=true
+            break
+        fi
+    else
+        if ping -c 1 -W 2 "${HOST}" >/dev/null 2>&1; then
+            ping_success=true
+            break
+        fi
+    fi
+    sleep 1
+done
+
+if [ "$ping_success" = true ]; then
+    echo "Host ${HOST} is reachable via ping."
+    echo "Waiting for services to start (checking common ports)..."
+    
+    COMMON_PORTS=(22 80 443 445 3389 8080 21 23 25 139)
+    services_ready=false
+    
+    for attempt in {1..20}; do
+        for port in "${COMMON_PORTS[@]}"; do
+            if command -v nc >/dev/null 2>&1; then
+                if nc -z -w 1 "${HOST}" "$port" >/dev/null 2>&1; then
+                    echo "Detected open port ${port}. Services are starting up!"
+                    services_ready=true
+                    break 2
+                fi
+            else
+                if (echo > "/dev/tcp/${HOST}/${port}") >/dev/null 2>&1; then
+                    echo "Detected open port ${port}. Services are starting up!"
+                    services_ready=true
+                    break 2
+                fi
+            fi
+        done
+        sleep 1.5
+    done
+    
+    if [ "$services_ready" = false ]; then
+        echo "No common ports responded within timeout. Proceeding with scan anyway..."
+    else
+        # Give a small 3-second buffer for other services to fully bind
+        sleep 3
+    fi
+else
+    echo "Warning: Host ${HOST} did not respond to ping. Proceeding with scan anyway..."
+fi
+
 # Construct command and filename
 NMAP_FLAGS="-Pn -sV -T4 -sC"
 SUFFIX=""
+
+# On macOS, TCP SYN scan (-sS) via raw sockets often fails over virtual tun/utun interfaces.
+# Using TCP connect scan (-sT) is much more reliable and standard.
+if [ "$(uname)" = "Darwin" ] && [ "$UDP_SCAN" = false ]; then
+    NMAP_FLAGS="${NMAP_FLAGS} -sT"
+fi
 
 if [ "$ALL_PORTS" = true ]; then
     NMAP_FLAGS="${NMAP_FLAGS} -p-"
@@ -55,9 +127,7 @@ if [ "$UDP_SCAN" = true ]; then
     SUFFIX="${SUFFIX}-udp"
 fi
 
-if [ -z "$NAME" ]; then
-    NAME="${HOST}"
-fi
+
 
 OUTPUT_FILE="${NAME}${SUFFIX}.nmap"
 
@@ -128,6 +198,7 @@ if [ -f "${OUTPUT_FILE}" ]; then
                     --output "${output_file}" > "feroxbuster-${port}.log" 2>&1 &
             fi
         fi
-    fi < "${OUTPUT_FILE}"
+    done < "${OUTPUT_FILE}"
 fi
+
 
