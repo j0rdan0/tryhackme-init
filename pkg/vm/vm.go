@@ -70,7 +70,7 @@ func checkLoggedInWithTimeout(page *bonk.Page, timeout time.Duration) bool {
 	return ok && val
 }
 
-func Start(roomName string) {
+func Start(roomName string, enableLoop bool) {
 	roomURL := "https://tryhackme.com/room/" + roomName
 	hasSession := false
 	if _, err := os.Stat(browser.SESSION_FILE); err == nil {
@@ -205,7 +205,9 @@ func Start(roomName string) {
 		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
 		_ = ctx.SaveState(browser.SESSION_FILE)
 		browser.CleanScreenshots()
-		startLoopDaemon(roomName)
+		if enableLoop {
+			startLoopDaemon(roomName)
+		}
 		dropIntoShell(roomName)
 		return
 	}
@@ -272,14 +274,18 @@ func Start(roomName string) {
 
 	browser.CleanScreenshots()
 	time.Sleep(1 * time.Second)
-	startLoopDaemon(roomName)
+	if enableLoop {
+		startLoopDaemon(roomName)
+	}
 	dropIntoShell(roomName)
 }
 
 func dropIntoShell(roomName string) {
 	// Ensure we are in the room directory
-	if fi, err := os.Stat(roomName); err == nil && fi.IsDir() {
-		_ = os.Chdir(roomName)
+	projectRoot := getProjectRoot()
+	roomDir := filepath.Join(projectRoot, roomName)
+	if fi, err := os.Stat(roomDir); err == nil && fi.IsDir() {
+		_ = os.Chdir(roomDir)
 	}
 	
 	if targetCwd, err := os.Getwd(); err == nil {
@@ -291,6 +297,7 @@ func dropIntoShell(roomName string) {
 		shell = "/bin/zsh"
 	}
 	env := os.Environ()
+	browser.CloseAll()
 	_ = syscall.Exec(shell, []string{shell}, env)
 }
 
@@ -467,9 +474,22 @@ func Extend(roomName string) {
 	} else {
 		// Attempt to click the "Add 1 hour" button
 		fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
-		err = page.Timeout(5 * time.Second).GetByText("Add 1 hour").Click()
-		if err != nil {
-			fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", err)
+		clicked, clickErr := page.Timeout(5 * time.Second).Evaluate(`(() => {
+			const els = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+			const btn = els.find(el => {
+				const text = (el.innerText || el.textContent || "").toLowerCase();
+				return text.includes("add 1 hour") || text.includes("add 1 hr");
+			});
+			if (btn) {
+				btn.click();
+				return true;
+			}
+			return false;
+		})()`)
+		if clickErr != nil {
+			fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", clickErr)
+		} else if clickedBool, ok := clicked.(bool); !ok || !clickedBool {
+			fmt.Println("Error: 'Add 1 hour' button not found on the page.")
 		} else {
 			fmt.Println("Successfully clicked 'Add 1 hour' button!")
 		}
@@ -688,10 +708,13 @@ func startLoopDaemon(roomName string) {
 	}
 
 	cmd := exec.Command(exe, roomName, "daemon")
+	projectRoot := getProjectRoot()
+	cmd.Dir = projectRoot
 	
 	// Create a log file inside the room directory (or in /tmp if room directory doesn't exist)
-	logDir := roomName
-	if fi, err := os.Stat(roomName); err != nil || !fi.IsDir() {
+	roomDir := filepath.Join(projectRoot, roomName)
+	logDir := roomDir
+	if fi, err := os.Stat(roomDir); err != nil || !fi.IsDir() {
 		logDir = os.TempDir()
 	}
 	logFile, err := os.OpenFile(filepath.Join(logDir, "loop.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -849,6 +872,17 @@ func findScript(name string) (string, error) {
 	return "", fmt.Errorf("%s not found in search paths", name)
 }
 
+func getProjectRoot() string {
+	if vpnPath, err := findScript("vpn.sh"); err == nil {
+		return filepath.Dir(vpnPath)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return cwd
+}
+
 func runVPN(action string) error {
 	vpnPath, err := findScript("vpn.sh")
 	if err != nil {
@@ -863,11 +897,8 @@ func runVPN(action string) error {
 }
 
 func runScan(roomName string, ip string) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = "."
-	}
-	roomDir := filepath.Join(cwd, roomName)
+	projectRoot := getProjectRoot()
+	roomDir := filepath.Join(projectRoot, roomName)
 	roomDirExists := false
 	if fi, err := os.Stat(roomDir); err == nil && fi.IsDir() {
 		roomDirExists = true

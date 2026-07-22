@@ -1,0 +1,39 @@
+
+ ___  ___  __   __     __      __         __   ___
+|__  |__  |__) |__) | /  `    /  \ \_/ | |  \ |__
+|    |___ |  \ |  \ | \__,    \__/ / \ | |__/ |___
+by Ben "epi" Risher 🤓                 ver: 2.13.1
+───────────────────────────┬──────────────────────
+ 🎯  Target Url            │ http://plottedtms.thm/
+ 🚩  In-Scope Url          │ plottedtms.thm
+ 🚀  Threads               │ 50
+ 📖  Wordlist              │ /Users/j0rdan0/pentest-tools/SecLists/Discovery/Web-Content/raft-medium-directories.txt
+ 👌  Status Codes          │ All Status Codes!
+ 💥  Timeout (secs)        │ 7
+ 🦡  User-Agent            │ feroxbuster/2.13.1
+ 🔎  Extract Links         │ true
+ 💾  Output File           │ output.ferox
+ 📂  Scan Dir Listings     │ true
+ 💲  Extensions            │ [php, txt]
+ 🏁  HTTP methods          │ [GET]
+ 🔓  Insecure              │ true
+ 🔃  Recursion Depth       │ 4
+───────────────────────────┴──────────────────────
+ 🏁  Press [ENTER] to use the Scan Management Menu™
+──────────────────────────────────────────────────
+403      GET        9l       28w      279c Auto-filtering found 404-like response and created new filter; toggle off with --dont-filter
+
+404      GET        9l       31w      276c Auto-filtering found 404-like response and created new filter; toggle off with --dont-filter
+
+301      GET        9l       28w      316c http://plottedtms.thm/admin => http://plottedtms.thm/admin/
+
+200      GET       15l       74w     6147c http://plottedtms.thm/icons/ubuntu-logo.png
+
+200      GET      375l      964w    10918c http://plottedtms.thm/
+
+200      GET        1l        1w       81c http://plottedtms.thm/admin/id_rsa
+
+200      GET        1l        1w       25c http://plottedtms.thm/passwd
+
+200      GET        1l        1w       25c http://plottedtms.thm/shadow
+

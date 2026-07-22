@@ -11,7 +11,7 @@ var startCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		roomName := args[0]
-		vm.Start(roomName)
+		vm.Start(roomName, false)
 	},
 }
 

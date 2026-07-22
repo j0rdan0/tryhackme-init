@@ -1,0 +1,339 @@
+Configuration {
+    kind: "configuration",
+    wordlist: "/Users/j0rdan0/pentest-tools/SecLists/Discovery/Web-Content/raft-medium-directories.txt",
+    config: "",
+    proxy: "",
+    replay_proxy: "",
+    server_certs: [],
+    client_cert: "",
+    client_key: "",
+    target_url: "http://plottedtms.thm:445/",
+    status_codes: [
+        100,
+        101,
+        102,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        207,
+        208,
+        226,
+        300,
+        301,
+        302,
+        303,
+        304,
+        305,
+        307,
+        308,
+        400,
+        401,
+        402,
+        403,
+        404,
+        405,
+        406,
+        407,
+        408,
+        409,
+        410,
+        411,
+        412,
+        413,
+        414,
+        415,
+        416,
+        417,
+        418,
+        421,
+        422,
+        423,
+        424,
+        426,
+        428,
+        429,
+        431,
+        451,
+        500,
+        501,
+        502,
+        503,
+        504,
+        505,
+        506,
+        507,
+        508,
+        510,
+        511,
+        103,
+        425,
+    ],
+    replay_codes: [
+        100,
+        101,
+        102,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        207,
+        208,
+        226,
+        300,
+        301,
+        302,
+        303,
+        304,
+        305,
+        307,
+        308,
+        400,
+        401,
+        402,
+        403,
+        404,
+        405,
+        406,
+        407,
+        408,
+        409,
+        410,
+        411,
+        412,
+        413,
+        414,
+        415,
+        416,
+        417,
+        418,
+        421,
+        422,
+        423,
+        424,
+        426,
+        428,
+        429,
+        431,
+        451,
+        500,
+        501,
+        502,
+        503,
+        504,
+        505,
+        506,
+        507,
+        508,
+        510,
+        511,
+        103,
+        425,
+    ],
+    filter_status: [],
+    client: Client {
+        accepts: Accepts,
+        proxies: [
+            Matcher,
+        ],
+        redirect_policy: "Policy(None)",
+        referer: true,
+        default_headers: {
+            "accept": "*/*",
+            "user-agent": "feroxbuster/2.13.1",
+        },
+        reqwest::config::RequestTimeout: 7s,
+    },
+    replay_client: None,
+    threads: 50,
+    timeout: 7,
+    verbosity: 0,
+    silent: false,
+    quiet: false,
+    output_level: Default,
+    auto_bail: false,
+    auto_tune: false,
+    requester_policy: Default,
+    json: false,
+    output: "output-445.ferox",
+    debug_log: "",
+    user_agent: "feroxbuster/2.13.1",
+    random_agent: false,
+    redirects: false,
+    insecure: true,
+    extensions: [
+        "php",
+        "txt",
+    ],
+    methods: [
+        "GET",
+    ],
+    data: [],
+    headers: {},
+    queries: [],
+    no_recursion: false,
+    extract_links: true,
+    add_slash: false,
+    stdin: false,
+    cached_stdin: [],
+    depth: 4,
+    scan_limit: 0,
+    parallel: 0,
+    rate_limit: 0,
+    filter_size: [],
+    filter_line_count: [],
+    filter_word_count: [],
+    filter_regex: [],
+    dont_filter: false,
+    resumed: false,
+    resume_from: "",
+    save_state: true,
+    time_limit: "",
+    filter_similar: [],
+    url_denylist: [],
+    regex_denylist: [],
+    scope: [
+        Url {
+            scheme: "http",
+            cannot_be_a_base: false,
+            username: "",
+            password: None,
+            host: Some(
+                Domain(
+                    "plottedtms.thm",
+                ),
+            ),
+            port: Some(
+                445,
+            ),
+            path: "/",
+            query: None,
+            fragment: None,
+        },
+    ],
+    collect_extensions: false,
+    dont_collect: [
+        "woff2",
+        "woff",
+        "ttf",
+        "otf",
+        "eot",
+        "tif",
+        "tiff",
+        "ico",
+        "cur",
+        "bmp",
+        "webp",
+        "svg",
+        "png",
+        "jpg",
+        "jpeg",
+        "jfif",
+        "gif",
+        "avif",
+        "apng",
+        "pjpeg",
+        "pjp",
+        "mov",
+        "wav",
+        "mpg",
+        "mpeg",
+        "mp3",
+        "mp4",
+        "m4a",
+        "m4p",
+        "m4v",
+        "ogg",
+        "webm",
+        "ogv",
+        "oga",
+        "flac",
+        "aac",
+        "3gp",
+        "css",
+        "zip",
+        "xls",
+        "xml",
+        "gz",
+        "tgz",
+    ],
+    collect_backups: false,
+    backup_extensions: [
+        "~",
+        ".bak",
+        ".bak2",
+        ".old",
+        ".1",
+    ],
+    collect_words: false,
+    force_recursion: false,
+    update_app: false,
+    scan_dir_listings: true,
+    request_file: "",
+    protocol: "https",
+    limit_bars: 0,
+    unique: false,
+    response_size_limit: 4194304,
+}
+200      GET       15l       74w     6147c http://plottedtms.thm:445/icons/ubuntu-logo.png
+200      GET      375l      964w    10918c http://plottedtms.thm:445/
+301      GET        9l       28w      326c http://plottedtms.thm:445/management => http://plottedtms.thm:445/management/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/inc (Apache)
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/uploads (Apache)
+200      GET       21l      137w     9761c http://plottedtms.thm:445/management/uploads/1624240500_avatar.png
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/assets (Apache)
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/config.php
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/assets/js (Apache)
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/database => http://plottedtms.thm:445/management/database/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/database (Apache)
+200      GET        7l       36w      330c http://plottedtms.thm:445/management/assets/js/scripts.js
+200      GET      324l     1149w    10225c http://plottedtms.thm:445/management/database/traffic_offense_db.sql
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/classes (Apache)
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/classes/Master.php
+200      GET        1l        5w       58c http://plottedtms.thm:445/management/classes/Login.php
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/classes/Users.php
+500      GET        5l       19w      229c http://plottedtms.thm:445/management/home.php
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/pages (Apache)
+301      GET        9l       28w      332c http://plottedtms.thm:445/management/pages => http://plottedtms.thm:445/management/pages/
+301      GET        9l       28w      331c http://plottedtms.thm:445/management/libs => http://plottedtms.thm:445/management/libs/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/libs (Apache)
+200      GET       80l      125w     1402c http://plottedtms.thm:445/management/libs/style.css
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/plugins => http://plottedtms.thm:445/management/plugins/
+301      GET        9l       28w      332c http://plottedtms.thm:445/management/admin => http://plottedtms.thm:445/management/admin/
+301      GET        9l       28w      330c http://plottedtms.thm:445/management/inc => http://plottedtms.thm:445/management/inc/
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/uploads => http://plottedtms.thm:445/management/uploads/
+301      GET        9l       28w      333c http://plottedtms.thm:445/management/assets => http://plottedtms.thm:445/management/assets/
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/classes => http://plottedtms.thm:445/management/classes/
+301      GET        9l       28w      336c http://plottedtms.thm:445/management/assets/js => http://plottedtms.thm:445/management/assets/js/
+200      GET      281l      895w    14506c http://plottedtms.thm:445/management/index.php
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/admin/reports => http://plottedtms.thm:445/management/admin/reports/
+200      GET      474l     1270w    22279c http://plottedtms.thm:445/management/admin/index.php
+500      GET       64l      121w     2248c http://plottedtms.thm:445/management/inc/footer.php
+301      GET        9l       28w      344c http://plottedtms.thm:445/management/admin/maintenance => http://plottedtms.thm:445/management/admin/maintenance/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/plugins/jquery (Apache)
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/dist (Apache)
+200      GET        2l     1062w    72380c http://plottedtms.thm:445/management/plugins/jquery/jquery.slim.min.js
+301      GET        9l       28w      341c http://plottedtms.thm:445/management/plugins/jquery => http://plottedtms.thm:445/management/plugins/jquery/
+301      GET        9l       28w      331c http://plottedtms.thm:445/management/dist => http://plottedtms.thm:445/management/dist/
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/dist/js => http://plottedtms.thm:445/management/dist/js/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/dist/js (Apache)
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/dist/css => http://plottedtms.thm:445/management/dist/css/
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/dist/img => http://plottedtms.thm:445/management/dist/img/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/dist/css (Apache)
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/dist/img (Apache)
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/dist/js/pages => http://plottedtms.thm:445/management/dist/js/pages/
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/admin/drivers => http://plottedtms.thm:445/management/admin/drivers/
+301      GET        9l       28w      339c http://plottedtms.thm:445/management/dist/css/alt => http://plottedtms.thm:445/management/dist/css/alt/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/plugins/dropzone (Apache)
+301      GET        9l       28w      343c http://plottedtms.thm:445/management/plugins/dropzone => http://plottedtms.thm:445/management/plugins/dropzone/
+301      GET        9l       28w      347c http://plottedtms.thm:445/management/plugins/dropzone/min => http://plottedtms.thm:445/management/plugins/dropzone/min/
+MSG      0.000 feroxbuster::heuristics detected directory listing: http://plottedtms.thm:445/management/plugins/popper (Apache)
+200      GET        1l     4186w    61481c http://plottedtms.thm:445/management/plugins/popper/popper-utils.js.map
+200      GET        1l    11294w   125107c http://plottedtms.thm:445/management/plugins/popper/popper.min.js.map
+301      GET        9l       28w      341c http://plottedtms.thm:445/management/plugins/popper => http://plottedtms.thm:445/management/plugins/popper/

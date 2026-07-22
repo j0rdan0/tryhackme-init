@@ -1,0 +1,109 @@
+
+ ___  ___  __   __     __      __         __   ___
+|__  |__  |__) |__) | /  `    /  \ \_/ | |  \ |__
+|    |___ |  \ |  \ | \__,    \__/ / \ | |__/ |___
+by Ben "epi" Risher 🤓                 ver: 2.13.1
+───────────────────────────┬──────────────────────
+ 🎯  Target Url            │ http://plottedtms.thm:445/
+ 🚩  In-Scope Url          │ plottedtms.thm
+ 🚀  Threads               │ 50
+ 📖  Wordlist              │ /Users/j0rdan0/pentest-tools/SecLists/Discovery/Web-Content/raft-medium-directories.txt
+ 👌  Status Codes          │ All Status Codes!
+ 💥  Timeout (secs)        │ 7
+ 🦡  User-Agent            │ feroxbuster/2.13.1
+ 🔎  Extract Links         │ true
+ 💾  Output File           │ output-445.ferox
+ 📂  Scan Dir Listings     │ true
+ 💲  Extensions            │ [php, txt]
+ 🏁  HTTP methods          │ [GET]
+ 🔓  Insecure              │ true
+ 🔃  Recursion Depth       │ 4
+───────────────────────────┴──────────────────────
+ 🏁  Press [ENTER] to use the Scan Management Menu™
+──────────────────────────────────────────────────
+404      GET        9l       31w      277c Auto-filtering found 404-like response and created new filter; toggle off with --dont-filter
+
+403      GET        9l       28w      280c Auto-filtering found 404-like response and created new filter; toggle off with --dont-filter
+
+200      GET       15l       74w     6147c http://plottedtms.thm:445/icons/ubuntu-logo.png
+
+200      GET      375l      964w    10918c http://plottedtms.thm:445/
+
+301      GET        9l       28w      326c http://plottedtms.thm:445/management => http://plottedtms.thm:445/management/
+
+200      GET       21l      137w     9761c http://plottedtms.thm:445/management/uploads/1624240500_avatar.png
+
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/config.php
+
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/database => http://plottedtms.thm:445/management/database/
+
+200      GET        7l       36w      330c http://plottedtms.thm:445/management/assets/js/scripts.js
+
+200      GET      324l     1149w    10225c http://plottedtms.thm:445/management/database/traffic_offense_db.sql
+
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/classes/Master.php
+
+200      GET        1l        5w       58c http://plottedtms.thm:445/management/classes/Login.php
+
+200      GET        0l        0w        0c http://plottedtms.thm:445/management/classes/Users.php
+
+500      GET        5l       19w      229c http://plottedtms.thm:445/management/home.php
+
+301      GET        9l       28w      332c http://plottedtms.thm:445/management/pages => http://plottedtms.thm:445/management/pages/
+
+301      GET        9l       28w      331c http://plottedtms.thm:445/management/libs => http://plottedtms.thm:445/management/libs/
+
+200      GET       80l      125w     1402c http://plottedtms.thm:445/management/libs/style.css
+
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/plugins => http://plottedtms.thm:445/management/plugins/
+
+301      GET        9l       28w      332c http://plottedtms.thm:445/management/admin => http://plottedtms.thm:445/management/admin/
+
+301      GET        9l       28w      330c http://plottedtms.thm:445/management/inc => http://plottedtms.thm:445/management/inc/
+
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/uploads => http://plottedtms.thm:445/management/uploads/
+
+301      GET        9l       28w      333c http://plottedtms.thm:445/management/assets => http://plottedtms.thm:445/management/assets/
+
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/classes => http://plottedtms.thm:445/management/classes/
+
+301      GET        9l       28w      336c http://plottedtms.thm:445/management/assets/js => http://plottedtms.thm:445/management/assets/js/
+
+200      GET      281l      895w    14506c http://plottedtms.thm:445/management/index.php
+
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/admin/reports => http://plottedtms.thm:445/management/admin/reports/
+
+200      GET      474l     1270w    22279c http://plottedtms.thm:445/management/admin/index.php
+
+500      GET       64l      121w     2248c http://plottedtms.thm:445/management/inc/footer.php
+
+301      GET        9l       28w      344c http://plottedtms.thm:445/management/admin/maintenance => http://plottedtms.thm:445/management/admin/maintenance/
+
+200      GET        2l     1062w    72380c http://plottedtms.thm:445/management/plugins/jquery/jquery.slim.min.js
+
+301      GET        9l       28w      341c http://plottedtms.thm:445/management/plugins/jquery => http://plottedtms.thm:445/management/plugins/jquery/
+
+301      GET        9l       28w      331c http://plottedtms.thm:445/management/dist => http://plottedtms.thm:445/management/dist/
+
+301      GET        9l       28w      334c http://plottedtms.thm:445/management/dist/js => http://plottedtms.thm:445/management/dist/js/
+
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/dist/css => http://plottedtms.thm:445/management/dist/css/
+
+301      GET        9l       28w      335c http://plottedtms.thm:445/management/dist/img => http://plottedtms.thm:445/management/dist/img/
+
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/dist/js/pages => http://plottedtms.thm:445/management/dist/js/pages/
+
+301      GET        9l       28w      340c http://plottedtms.thm:445/management/admin/drivers => http://plottedtms.thm:445/management/admin/drivers/
+
+301      GET        9l       28w      339c http://plottedtms.thm:445/management/dist/css/alt => http://plottedtms.thm:445/management/dist/css/alt/
+
+301      GET        9l       28w      343c http://plottedtms.thm:445/management/plugins/dropzone => http://plottedtms.thm:445/management/plugins/dropzone/
+
+301      GET        9l       28w      347c http://plottedtms.thm:445/management/plugins/dropzone/min => http://plottedtms.thm:445/management/plugins/dropzone/min/
+
+200      GET        1l     4186w    61481c http://plottedtms.thm:445/management/plugins/popper/popper-utils.js.map
+
+200      GET        1l    11294w   125107c http://plottedtms.thm:445/management/plugins/popper/popper.min.js.map
+
+301      GET        9l       28w      341c http://plottedtms.thm:445/management/plugins/popper => http://plottedtms.thm:445/management/plugins/popper/
+
