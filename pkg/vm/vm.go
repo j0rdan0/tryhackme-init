@@ -180,22 +180,36 @@ func Start(roomName string, enableLoop bool) {
 		<-done
 	}
 
-	// Check if VM is already active
-	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info') || 
-		                   document.getElementById('active-machines-information-header') ||
-		                   document.querySelector('[id^="active-machines-information"]') ||
-		                   document.querySelector('[class*="active-machines-information"]');
-		if (activeInfo) {
-			const text = activeInfo.innerText.toLowerCase();
-			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+	// Check if VM is already active (waiting for React component to load VM widget)
+	hasActiveVM, _ := page.Timeout(15 * time.Second).Evaluate(`(async () => {
+		for (let i = 0; i < 24; i++) {
+			const activeInfo = document.getElementById('active-machine-info') || 
+			                   document.getElementById('active-machines-information-header') ||
+			                   document.querySelector('[id^="active-machines-information"]') ||
+			                   document.querySelector('[class*="active-machines-information"]');
+			if (activeInfo) {
+				const text = activeInfo.innerText.toLowerCase();
+				if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+					return true;
+				}
+			}
+			const btns = Array.from(document.querySelectorAll('button'));
+			const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+			const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+			if (hasTerminate || hasAddHour) {
 				return true;
 			}
+			// If we've polled for at least 5 seconds, check if start button is present and not disabled
+			if (i >= 10) {
+				const startBtn = document.getElementById('start-machine-button-1') || 
+				                 document.querySelector('[id^="start-machine-button"]');
+				if (startBtn && !startBtn.disabled) {
+					return false;
+				}
+			}
+			await new Promise(r => setTimeout(r, 500));
 		}
-		const btns = Array.from(document.querySelectorAll('button'));
-		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
-		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
-		return hasTerminate || hasAddHour;
+		return false;
 	})()`)
 	if hasActiveVM.(bool) {
 		fmt.Println("Target VM is already running.")
@@ -401,23 +415,37 @@ func Extend(roomName string) {
 	}
 
 	// Now we are logged in (or forced to continue)
-	// Check if VM is active
+	// Check if VM is active (waiting for React component to load VM widget)
 	fmt.Println("Checking target VM status...")
-	hasActiveVM, _ := page.Evaluate(`(() => {
-		const activeInfo = document.getElementById('active-machine-info') || 
-		                   document.getElementById('active-machines-information-header') ||
-		                   document.querySelector('[id^="active-machines-information"]') ||
-		                   document.querySelector('[class*="active-machines-information"]');
-		if (activeInfo) {
-			const text = activeInfo.innerText.toLowerCase();
-			if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+	hasActiveVM, _ := page.Timeout(15 * time.Second).Evaluate(`(async () => {
+		for (let i = 0; i < 24; i++) {
+			const activeInfo = document.getElementById('active-machine-info') || 
+			                   document.getElementById('active-machines-information-header') ||
+			                   document.querySelector('[id^="active-machines-information"]') ||
+			                   document.querySelector('[class*="active-machines-information"]');
+			if (activeInfo) {
+				const text = activeInfo.innerText.toLowerCase();
+				if (text.includes("terminate") || text.includes("add 1 hour") || /\b10\.\d+\.\d+\.\d+\b/.test(text)) {
+					return true;
+				}
+			}
+			const btns = Array.from(document.querySelectorAll('button'));
+			const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
+			const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
+			if (hasTerminate || hasAddHour) {
 				return true;
 			}
+			// If we've polled for at least 5 seconds, check if start button is present and not disabled
+			if (i >= 10) {
+				const startBtn = document.getElementById('start-machine-button-1') || 
+				                 document.querySelector('[id^="start-machine-button"]');
+				if (startBtn && !startBtn.disabled) {
+					return false;
+				}
+			}
+			await new Promise(r => setTimeout(r, 500));
 		}
-		const btns = Array.from(document.querySelectorAll('button'));
-		const hasTerminate = btns.some(b => b.innerText.toLowerCase().includes("terminate"));
-		const hasAddHour = btns.some(b => b.innerText.toLowerCase().includes("add 1 hour"));
-		return hasTerminate || hasAddHour;
+		return false;
 	})()`)
 
 	if !hasActiveVM.(bool) {
@@ -474,29 +502,60 @@ func Extend(roomName string) {
 	} else {
 		// Attempt to click the "Add 1 hour" button
 		fmt.Println("Attempting to click 'Add 1 hour' button automatically...")
-		clicked, clickErr := page.Timeout(5 * time.Second).Evaluate(`(() => {
+		clicked, clickErr := page.Timeout(15 * time.Second).Evaluate(`(async () => {
 			const els = Array.from(document.querySelectorAll('button, a, [role="button"]'));
 			const btn = els.find(el => {
 				const text = (el.innerText || el.textContent || "").toLowerCase();
-				return text.includes("add 1 hour") || text.includes("add 1 hr");
+				return (text.includes("add 1 hour") || text.includes("add 1 hr")) && !el.disabled;
 			});
-			if (btn) {
-				btn.click();
-				return true;
+			if (!btn) {
+				return "button_not_found_or_disabled";
 			}
-			return false;
+
+			const getRemainingTime = () => {
+				const activeInfo = document.getElementById('active-machine-info') || 
+				                   document.getElementById('active-machines-information-header') || 
+				                   document.querySelector('[id^="active-machines-information"]') ||
+				                   document.querySelector('[class*="active-machines-information"]');
+				return activeInfo ? activeInfo.innerText : "";
+			};
+
+			const initialTime = getRemainingTime();
+			btn.click();
+
+			// Poll for the remaining time to change (increase) for up to 10 seconds
+			for (let i = 0; i < 20; i++) {
+				await new Promise(r => setTimeout(r, 500));
+				const currentTime = getRemainingTime();
+				if (currentTime !== initialTime) {
+					return "success_time_changed";
+				}
+			}
+			return "clicked_but_time_did_not_change_yet";
 		})()`)
+
 		if clickErr != nil {
 			fmt.Printf("Error: Could not click 'Add 1 hour' button: %v\n", clickErr)
-		} else if clickedBool, ok := clicked.(bool); !ok || !clickedBool {
-			fmt.Println("Error: 'Add 1 hour' button not found on the page.")
+		} else if resultStr, ok := clicked.(string); ok {
+			switch resultStr {
+			case "button_not_found_or_disabled":
+				fmt.Println("Warning: 'Add 1 hour' button not found on the page or it is disabled (max duration reached).")
+			case "success_time_changed":
+				fmt.Println("Successfully clicked 'Add 1 hour' button and verified machine time extended!")
+			case "clicked_but_time_did_not_change_yet":
+				fmt.Println("Warning: Clicked 'Add 1 hour' button, but machine time did not change within 10 seconds.")
+			}
 		} else {
-			fmt.Println("Successfully clicked 'Add 1 hour' button!")
+			fmt.Printf("Warning: Unexpected return value from click script: %v\n", clicked)
 		}
 	}
 
-	fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
-	_ = ctx.SaveState(browser.SESSION_FILE)
+	if checkLoggedIn(page) {
+		fmt.Printf("Saving updated session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
+	} else {
+		fmt.Println("Warning: Not logged in at end of Extend. Skipping session state save to prevent corruption.")
+	}
 	browser.CleanScreenshots()
 	time.Sleep(2 * time.Second)
 }
