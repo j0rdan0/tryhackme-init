@@ -178,6 +178,25 @@ func Start(roomName string, enableLoop bool) {
 		}()
 
 		<-done
+
+		// Save session state immediately
+		fmt.Printf("Saving current session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
+
+		// Close the headful browser window
+		b.Close()
+
+		// Relaunch headlessly
+		fmt.Println("Closing headful browser and relaunching headlessly to start VM...")
+		b, ctx, page, err = browser.Launch(true)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer b.Close()
+
+		// Navigate to the room page headlessly
+		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
+		time.Sleep(3 * time.Second)
 	}
 
 	// Check if VM is already active (waiting for React component to load VM widget)
@@ -412,6 +431,25 @@ func Extend(roomName string) {
 		}()
 
 		<-done
+
+		// Save session state immediately
+		fmt.Printf("Saving current session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
+
+		// Close the headful browser window
+		b.Close()
+
+		// Relaunch headlessly
+		fmt.Println("Closing headful browser and relaunching headlessly to extend VM...")
+		b, ctx, page, err = browser.Launch(true)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer b.Close()
+
+		// Navigate to the room page headlessly
+		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
+		time.Sleep(3 * time.Second)
 	}
 
 	// Now we are logged in (or forced to continue)
@@ -666,6 +704,25 @@ func Terminate(roomName string) {
 		}()
 
 		<-done
+
+		// Save session state immediately
+		fmt.Printf("Saving current session state to %s...\n", browser.SESSION_FILE)
+		_ = ctx.SaveState(browser.SESSION_FILE)
+
+		// Close the headful browser window
+		b.Close()
+
+		// Relaunch headlessly
+		fmt.Println("Closing headful browser and relaunching headlessly to terminate VM...")
+		b, ctx, page, err = browser.Launch(true)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer b.Close()
+
+		// Navigate to the room page headlessly
+		_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
+		time.Sleep(3 * time.Second)
 	}
 
 	// Now we are logged in (or forced to continue)
@@ -880,6 +937,26 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 	// If not found immediately, poll for up to 90 seconds (useful during initial boot)
 	fmt.Println("Waiting for IP address to be assigned (polling for up to 90s)...")
 	for i := 0; i < 45; i++ {
+		if page.IsClosed() {
+			break
+		}
+
+		if i > 0 && i%5 == 0 {
+			fmt.Printf("Still waiting for target IP... (%ds elapsed)\n", i*2)
+		}
+
+		// Every 15 seconds (7 iterations), reload the page to ensure we pull fresh state from API
+		if i > 0 && i%7 == 0 {
+			fmt.Println("Reloading room page to refresh VM state...")
+			roomURL := "https://tryhackme.com/room/" + roomName
+			_ = page.Navigate(roomURL, bonk.WithTimeout(15*time.Second))
+			// Give the page 3 seconds to boot React app and fetch state
+			time.Sleep(3 * time.Second)
+			if page.IsClosed() {
+				break
+			}
+		}
+
 		val, err := page.Evaluate(`(() => {
 			const el = document.getElementById('active-machine-info') || 
 			           document.getElementById('active-machines-information-header') || 
@@ -889,7 +966,11 @@ func logTargetIP(page *bonk.Page, roomName string) string {
 			const match = el.innerText.match(/\b(10\.\d+\.\d+\.\d+)\b/);
 			return match ? match[1] : "";
 		})()`)
-		if err == nil {
+		if err != nil {
+			if page.IsClosed() {
+				break
+			}
+		} else {
 			if ip, ok := val.(string); ok && ip != "" {
 				printIP(ip, roomName)
 				_ = hosts.UpdateEntry(roomName, ip)
