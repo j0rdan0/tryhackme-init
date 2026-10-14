@@ -107,32 +107,55 @@ else
     echo "Warning: Host ${HOST} did not respond to ping. Proceeding with scan anyway..."
 fi
 
-# Construct command and filename
-NMAP_FLAGS="-Pn -sV -T4 -sC"
 SUFFIX=""
 
-# On macOS, TCP SYN scan (-sS) via raw sockets often fails over virtual tun/utun interfaces.
-# Using TCP connect scan (-sT) is much more reliable and standard.
-if [ "$(uname)" = "Darwin" ] && [ "$UDP_SCAN" = false ]; then
-    NMAP_FLAGS="${NMAP_FLAGS} -sT"
-fi
-
 if [ "$ALL_PORTS" = true ]; then
-    NMAP_FLAGS="${NMAP_FLAGS} -p-"
     SUFFIX="${SUFFIX}-all"
 fi
 
 if [ "$UDP_SCAN" = true ]; then
-    NMAP_FLAGS="${NMAP_FLAGS} -sU"
     SUFFIX="${SUFFIX}-udp"
 fi
 
-
-
 OUTPUT_FILE="${NAME}${SUFFIX}.nmap"
 
-echo "Executing: sudo nmap ${NMAP_FLAGS} -oN ${OUTPUT_FILE} ${HOST}"
-sudo nmap ${NMAP_FLAGS} -oN "${OUTPUT_FILE}" "${HOST}"
+if [ "$UDP_SCAN" = true ]; then
+    UDP_FLAGS="-Pn -sU -sV -T4 --max-retries 1"
+    if [ "$ALL_PORTS" = true ]; then
+        UDP_FLAGS="${UDP_FLAGS} -p-"
+    fi
+    echo "Executing: sudo nmap ${UDP_FLAGS} -oN ${OUTPUT_FILE} ${HOST}"
+    sudo nmap ${UDP_FLAGS} -oN "${OUTPUT_FILE}" "${HOST}"
+else
+    # Stage 1: Fast TCP SYN port discovery with max-retries 1 to avoid retransmission cap hangs on filtered ports
+    PORT_OPTS=""
+    if [ "$ALL_PORTS" = true ]; then
+        PORT_OPTS="-p- --min-rate 1000"
+        echo "Stage 1: Discovering all open TCP ports on ${HOST}..."
+    else
+        echo "Stage 1: Discovering open TCP ports on ${HOST}..."
+    fi
+
+    OPEN_PORTS=$(sudo nmap -Pn -sS -T4 --max-retries 1 ${PORT_OPTS} --open -oG - "${HOST}" 2>/dev/null | grep -oE '[0-9]+/open' | cut -d/ -f1 | paste -sd, -)
+
+    if [ -n "$OPEN_PORTS" ]; then
+        echo "[+] Discovered open port(s): ${OPEN_PORTS}"
+        echo "Stage 2: Running service and script detection on port(s): ${OPEN_PORTS}..."
+
+        STAGE2_FLAGS=""
+        if [ "$(uname)" = "Darwin" ]; then
+            # On macOS, --unprivileged prevents Nsock bind error (EINVAL 22) on virtual utun interfaces
+            STAGE2_FLAGS="--unprivileged"
+        fi
+
+        echo "Executing: sudo nmap -Pn -sV -sC -T4 ${STAGE2_FLAGS} -p ${OPEN_PORTS} -oN ${OUTPUT_FILE} ${HOST}"
+        sudo nmap -Pn -sV -sC -T4 ${STAGE2_FLAGS} -p "${OPEN_PORTS}" -oN "${OUTPUT_FILE}" "${HOST}"
+    else
+        echo "[-] No open TCP ports discovered on ${HOST}."
+        echo "Writing scan report to ${OUTPUT_FILE}..."
+        sudo nmap -Pn -sS -T4 --max-retries 1 ${PORT_OPTS} -oN "${OUTPUT_FILE}" "${HOST}"
+    fi
+fi
 
 # Check if nmap scan was successful and output file exists
 if [ -f "${OUTPUT_FILE}" ]; then
